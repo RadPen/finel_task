@@ -1,78 +1,93 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0 <0.9.0;
 
-// Useful for debugging. Remove when deploying to a live network.
-import "hardhat/console.sol";
-
-// Use openzeppelin to inherit battle-tested implementations (ERC20, ERC721, etc)
-// import "@openzeppelin/contracts/access/Ownable.sol";
-
-/**
- * A smart contract that allows changing a state variable of the contract and tracking the changes
- * It also allows the owner to withdraw the Ether in the contract
- * @author BuidlGuidl
- */
 contract YourContract {
-    // State Variables
-    address public immutable owner;
-    string public greeting = "Building Unstoppable Apps!!!";
-    bool public premium = false;
-    uint256 public totalCounter = 0;
-    mapping(address => uint) public userGreetingCounter;
-
-    // Events: a way to emit log statements from smart contract that can be listened to by external parties
-    event GreetingChange(address indexed greetingSetter, string newGreeting, bool premium, uint256 value);
-
-    // Constructor: Called once on contract deployment
-    // Check packages/hardhat/deploy/00_deploy_your_contract.ts
-    constructor(address _owner) {
-        owner = _owner;
+    struct Voter {
+        bool voted;
+        address delegate;
+        uint vote;
     }
 
-    // Modifier: used to define a set of rules that must be met before or after a function is executed
-    // Check the withdraw() function
-    modifier isOwner() {
-        // msg.sender: predefined variable that represents address of the account that called the current function
-        require(msg.sender == owner, "Not the Owner");
-        _;
+    struct Proposal {
+        bytes32 name;
+        uint voteCount;
     }
 
-    /**
-     * Function that allows anyone to change the state variable "greeting" of the contract and increase the counters
-     *
-     * @param _newGreeting (string memory) - new greeting to save on the contract
-     */
-    function setGreeting(string memory _newGreeting) public payable {
-        // Print data to the hardhat chain console. Remove when deploying to a live network.
-        console.log("Setting new greeting '%s' from %s", _newGreeting, msg.sender);
+    address public chairperson;
+    mapping(address => Voter) public voters;
+    Proposal[] public proposals;
+    bool public votingEnded;
 
-        // Change state variables
-        greeting = _newGreeting;
-        totalCounter += 1;
-        userGreetingCounter[msg.sender] += 1;
+    constructor() {
+        chairperson = msg.sender;
+        votingEnded = false;
+    }
 
-        // msg.value: built-in global variable that represents the amount of ether sent with the transaction
-        if (msg.value > 0) {
-            premium = true;
-        } else {
-            premium = false;
+    function propose(bytes32 proposalName) external {
+        require(msg.sender == chairperson, "Only chairperson can propose.");
+        proposals.push(Proposal({name: proposalName, voteCount: 0}));
+    }
+
+    function giveRightToVote(address voter) external {
+        require(msg.sender == chairperson, "Only chairperson can give right to vote.");
+        require(!voters[voter].voted, "The voter already voted.");
+        voters[voter].voted = false;
+    }
+
+    function delegate(address to) external {
+        Voter storage sender = voters[msg.sender];
+        require(!sender.voted, "You already voted.");
+        require(to != msg.sender, "Self-delegation is disallowed.");
+
+        while (voters[to].delegate != address(0)) {
+            to = voters[to].delegate;
         }
 
-        // emit: keyword used to trigger an event
-        emit GreetingChange(msg.sender, _newGreeting, msg.value > 0, msg.value);
+        sender.delegate = to;
+
+        if (voters[to].voted) {
+            proposals[voters[to].vote].voteCount++;
+        }
     }
 
-    /**
-     * Function that allows the owner to withdraw all the Ether in the contract
-     * The function can only be called by the owner of the contract as defined by the isOwner modifier
-     */
-    function withdraw() public isOwner {
-        (bool success, ) = owner.call{ value: address(this).balance }("");
-        require(success, "Failed to send Ether");
+    function vote(uint proposal) external {
+        Voter storage sender = voters[msg.sender];
+        require(!sender.voted, "You have already voted.");
+        require(proposal < proposals.length, "Invalid proposal.");
+
+        sender.voted = true;
+        sender.vote = proposal;
+        proposals[proposal].voteCount++;
     }
 
-    /**
-     * Function that allows the contract to receive ETH
-     */
-    receive() external payable {}
+    function revokeVote() external {
+        Voter storage sender = voters[msg.sender];
+        require(sender.voted, "You have not voted yet.");
+
+        proposals[sender.vote].voteCount--;
+
+        sender.voted = false;
+        sender.delegate = address(0); // сброс делегата
+    }
+
+    function endVoting() external {
+        require(msg.sender == chairperson, "Only chairperson can end voting.");
+        votingEnded = true;
+    }
+
+    function winningProposal() external view returns (uint winningProposalIndex) {
+        require(votingEnded, "Voting has not ended yet.");
+        uint winningVoteCount = 0;
+        for (uint i = 0; i < proposals.length; i++) {
+            if (proposals[i].voteCount > winningVoteCount) {
+                winningVoteCount = proposals[i].voteCount;
+                winningProposalIndex = i;
+            }
+        }
+    }
+
+    function getProposalCount() public view returns (uint256) {
+        return proposals.length;
+    }
 }
+

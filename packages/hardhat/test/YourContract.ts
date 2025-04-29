@@ -1,28 +1,24 @@
-import { expect } from "chai";
 import { ethers } from "hardhat";
-import { YourContract } from "../typechain-types";
+import { expect } from "chai";
 
 describe("YourContract", function () {
-  // We define a fixture to reuse the same setup in every test.
+    let yourContract;
+    let owner, addr1;
 
-  let yourContract: YourContract;
-  before(async () => {
-    const [owner] = await ethers.getSigners();
-    const yourContractFactory = await ethers.getContractFactory("YourContract");
-    yourContract = (await yourContractFactory.deploy(owner.address)) as YourContract;
-    await yourContract.waitForDeployment();
-  });
-
-  describe("Deployment", function () {
-    it("Should have the right message on deploy", async function () {
-      expect(await yourContract.greeting()).to.equal("Building Unstoppable Apps!!!");
+    beforeEach(async function () {
+        const YourContract = await ethers.getContractFactory("YourContract");
+        [owner, addr1] = await ethers.getSigners();
+        yourContract = await YourContract.deploy();
     });
 
-    it("Should allow setting a new message", async function () {
-      const newGreeting = "Learn Scaffold-ETH 2! :)";
-
-      await yourContract.setGreeting(newGreeting);
-      expect(await yourContract.greeting()).to.equal(newGreeting);
+    it("should allow chairperson to end voting", async function () {
+        await yourContract.endVoting();
+        expect(await yourContract.votingEnded()).to.be.true;
     });
-  });
+
+    it("should not allow to get winning proposal before voting ends", async function () {
+        await expect(yourContract.winningProposal()).to.be.revertedWith("Voting has not ended yet.");
+    });
 });
+
+
